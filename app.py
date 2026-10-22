@@ -248,12 +248,16 @@ def dashboard() -> None:
         st.info("所选时间区间内没有采样数据，请调整起止时间。")
         return
 
-    end_sample_time = interval_df["observed_at"].max()
-    end_sample = interval_df[interval_df["observed_at"] == end_sample_time].sort_values(
-        "score", ascending=False
+    interval_names = set(interval_df["candidate_name"].unique())
+    ranked_current = latest_sample.sort_values(
+        ["score", "candidate_name"], ascending=[False, True]
     )
-    all_names = end_sample["candidate_name"].tolist()
-    for name in interval_df["candidate_name"].drop_duplicates().tolist():
+    all_names = [
+        name
+        for name in ranked_current["candidate_name"].tolist()
+        if name in interval_names
+    ]
+    for name in interval_df.sort_values("score", ascending=False)["candidate_name"].drop_duplicates():
         if name not in all_names:
             all_names.append(name)
 
