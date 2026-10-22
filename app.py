@@ -1,5 +1,8 @@
 """Public, read-only dashboard for the collected Weibo ranking snapshots."""
 
+import importlib
+import inspect
+import math
 import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -9,7 +12,14 @@ import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 
-from storage import fetch_snapshots
+import storage as storage_module
+
+
+# Streamlit Community Cloud can hot-reload app.py without restarting imported
+# modules. Reload storage explicitly so a deployment never mixes a new page
+# with the previous fetch_snapshots signature.
+storage_module = importlib.reload(storage_module)
+fetch_snapshots = storage_module.fetch_snapshots
 
 
 load_dotenv()
@@ -109,13 +119,30 @@ def _utc_iso(value: datetime) -> str:
 
 @st.cache_data(ttl=30)
 def read_interval(start_at: str, end_at: str):
-    return fetch_snapshots(
-        STAGE,
-        hours=None,
-        start_at=start_at,
-        end_at=end_at,
-        limit=60000,
+    if "start_at" in inspect.signature(fetch_snapshots).parameters:
+        return fetch_snapshots(
+            STAGE,
+            hours=None,
+            start_at=start_at,
+            end_at=end_at,
+            limit=60000,
+        )
+
+    # Compatibility for an already-running Streamlit process that still has
+    # the pre-interval storage function cached. Query a broad window, then
+    # apply the exact bounds locally until the process restarts.
+    start = datetime.fromisoformat(start_at)
+    end = datetime.fromisoformat(end_at)
+    hours = max(
+        1,
+        math.ceil((datetime.now(timezone.utc) - start).total_seconds() / 3600) + 1,
     )
+    rows = fetch_snapshots(STAGE, hours=hours, limit=60000)
+    return [
+        row
+        for row in rows
+        if start <= datetime.fromisoformat(row["observed_at"].replace("Z", "+00:00")) <= end
+    ]
 
 
 @st.cache_data(ttl=30)
@@ -128,33 +155,42 @@ default_start = now_beijing - timedelta(hours=6)
 
 st.markdown('<p class="section-kicker">趋势时间区间</p>', unsafe_allow_html=True)
 with st.container(border=True):
-    date_col, start_col, end_col = st.columns([1.6, 1, 1])
-    with date_col:
-        selected_dates = st.date_input(
-            "日期范围",
-            value=(default_start.date(), now_beijing.date()),
-            max_value=now_beijing.date(),
-            format="YYYY-MM-DD",
-        )
-    with start_col:
-        selected_start_time = st.time_input(
-            "开始时间",
-            value=default_start.time().replace(second=0, microsecond=0),
-            step=300,
-        )
-    with end_col:
-        selected_end_time = st.time_input(
-            "结束时间",
-            value=now_beijing.time().replace(second=0, microsecond=0),
-            step=300,
-        )
+    start_group, end_group = st.columns(2, gap="large")
+    with start_group:
+        st.markdown("**开始时间**")
+        start_date_col, start_time_col = st.columns([1.35, 1])
+        with start_date_col:
+            selected_start_date = st.date_input(
+                "开始日期",
+                value=default_start.date(),
+                max_value=now_beijing.date(),
+                format="YYYY-MM-DD",
+            )
+        with start_time_col:
+            selected_start_time = st.time_input(
+                "开始时刻",
+                value=default_start.time().replace(second=0, microsecond=0),
+                step=300,
+            )
+    with end_group:
+        st.markdown("**结束时间**")
+        end_date_col, end_time_col = st.columns([1.35, 1])
+        with end_date_col:
+            selected_end_date = st.date_input(
+                "结束日期",
+                value=now_beijing.date(),
+                max_value=now_beijing.date(),
+                format="YYYY-MM-DD",
+            )
+        with end_time_col:
+            selected_end_time = st.time_input(
+                "结束时刻",
+                value=now_beijing.time().replace(second=0, microsecond=0),
+                step=300,
+            )
 
-if not isinstance(selected_dates, (tuple, list)) or len(selected_dates) != 2:
-    st.info("请在日期控件中选择开始日期和结束日期。")
-    st.stop()
-
-start_beijing = datetime.combine(selected_dates[0], selected_start_time, tzinfo=BEIJING)
-end_beijing = datetime.combine(selected_dates[1], selected_end_time, tzinfo=BEIJING)
+start_beijing = datetime.combine(selected_start_date, selected_start_time, tzinfo=BEIJING)
+end_beijing = datetime.combine(selected_end_date, selected_end_time, tzinfo=BEIJING)
 if end_beijing <= start_beijing:
     st.error("结束时间必须晚于开始时间。")
     st.stop()

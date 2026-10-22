@@ -78,6 +78,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_collector.ps1 
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_task.ps1 -IntervalMinutes 5
 ```
 
+安装脚本会把触发器对齐到电脑本地时钟的 5 分钟整点，即每小时的 `00、05、10……55` 分运行，而不是从安装时刻任意顺延 5 分钟。
+
 查看任务状态：
 
 ```powershell
