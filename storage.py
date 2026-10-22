@@ -64,14 +64,50 @@ def insert_snapshots(records):
         raise ValueError("Unknown storage backend")
 
 
-def fetch_snapshots(stage="final", hours=24, limit=35000):
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+def _as_utc_iso(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            raise ValueError("Snapshot query datetimes must include a timezone")
+        return value.astimezone(timezone.utc).isoformat()
+    return str(value)
+
+
+def fetch_snapshots(
+    stage="final",
+    hours=24,
+    limit=35000,
+    *,
+    start_at=None,
+    end_at=None,
+):
+    """Read snapshots within an exact UTC-aware interval.
+
+    ``hours`` remains for backward compatibility. Passing ``start_at`` takes
+    precedence; passing ``hours=None`` and no bounds returns the newest rows.
+    """
+
+    since = _as_utc_iso(start_at)
+    until = _as_utc_iso(end_at)
+    if since is None and hours is not None:
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     if backend() == "sqlite":
         conn = sqlite_conn()
         try:
+            clauses = ["stage=?", "category='剧综人物'"]
+            params = [stage]
+            if since is not None:
+                clauses.append("observed_at>=?")
+                params.append(since)
+            if until is not None:
+                clauses.append("observed_at<=?")
+                params.append(until)
+            params.append(limit)
             cur = conn.execute(
-                f"SELECT {COLUMNS} FROM score_snapshots WHERE stage=? AND category='剧综人物' AND observed_at>=? ORDER BY observed_at DESC LIMIT ?",
-                (stage, since, limit),
+                f"SELECT {COLUMNS} FROM score_snapshots WHERE {' AND '.join(clauses)} "
+                "ORDER BY observed_at DESC LIMIT ?",
+                params,
             )
             return [dict(zip(COLUMNS.split(","), row)) for row in cur.fetchall()]
         finally:
@@ -86,12 +122,15 @@ def fetch_snapshots(stage="final", hours=24, limit=35000):
         out = []
         batch = 1000
         for start in range(0, limit, batch):
-            rows = (client.table("score_snapshots")
-                    .select(COLUMNS)
-                    .eq("stage", stage)
-                    .eq("category", "剧综人物")
-                    .gte("observed_at", since)
-                    .order("observed_at", desc=True)
+            query = (client.table("score_snapshots")
+                     .select(COLUMNS)
+                     .eq("stage", stage)
+                     .eq("category", "剧综人物"))
+            if since is not None:
+                query = query.gte("observed_at", since)
+            if until is not None:
+                query = query.lte("observed_at", until)
+            rows = (query.order("observed_at", desc=True)
                     .range(start, min(start + batch - 1, limit - 1)).execute().data)
             out.extend(rows)
             if len(rows) < batch:

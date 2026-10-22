@@ -1,7 +1,9 @@
 import unittest
 import xml.etree.ElementTree as ET
+from pathlib import Path
+from unittest.mock import call, patch
 
-from android_collector import parse_ui_xml
+from android_collector import parse_ui_xml, refresh_activity
 from score_parser import parse_score
 
 
@@ -45,6 +47,49 @@ class AndroidUiParserTests(unittest.TestCase):
         self.assertEqual([record["candidate_name"] for record in records], ["十个勤天", "苏新皓"])
         self.assertEqual(records[0]["score"], 20_851_000)
         self.assertIsNone(records[0]["rank"])
+
+
+class RefreshTests(unittest.TestCase):
+    @patch("android_collector.time.sleep")
+    @patch("android_collector.run_adb")
+    def test_refresh_reopens_activity_in_weibo(self, run_adb, sleep):
+        run_adb.side_effect = ["package:/data/app/com.sina.weibo/base.apk", "Status: ok"]
+
+        refresh_activity(Path("adb.exe"), "127.0.0.1:12345", "https://example.test", 3)
+
+        self.assertEqual(run_adb.call_count, 2)
+        self.assertEqual(
+            run_adb.call_args_list[1],
+            call(
+                Path("adb.exe"),
+                "shell",
+                "am",
+                "start",
+                "-W",
+                "-a",
+                "android.intent.action.VIEW",
+                "-d",
+                "https://example.test",
+                "-p",
+                "com.sina.weibo",
+                serial="127.0.0.1:12345",
+            ),
+        )
+        sleep.assert_called_once_with(3)
+
+    @patch("android_collector.time.sleep")
+    @patch("android_collector.run_adb")
+    def test_refresh_escapes_query_separator(self, run_adb, _sleep):
+        run_adb.side_effect = ["package:/data/app/com.sina.weibo/base.apk", "Status: ok"]
+
+        refresh_activity(
+            Path("adb.exe"),
+            "device",
+            "https://example.test/activity?id=one&cid=two",
+            0,
+        )
+
+        self.assertIn(r"https://example.test/activity?id=one\&cid=two", run_adb.call_args.args)
 
 
 if __name__ == "__main__":

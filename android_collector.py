@@ -1,7 +1,8 @@
 """Read the visible Wbox ranking from a permitted Android/MuMu UI tree.
 
-This module only calls Android's read-only UI dump/screenshot commands.  It
-does not tap, swipe, log in, vote, solve challenges, or bypass app controls.
+This module opens the public activity deep link and calls Android's read-only
+UI dump/screenshot commands. It does not tap, swipe, log in, vote, solve
+challenges, or bypass app controls.
 """
 
 from __future__ import annotations
@@ -25,6 +26,9 @@ from storage import insert_snapshots
 
 
 load_dotenv()
+
+WEIBO_PACKAGE = "com.sina.weibo"
+DEFAULT_ACTIVITY_URL = "https://m.weibo.cn/c/wbox?id=l331zrkexk&cid=1420"
 
 STAGE_NAMES = {
     "入围赛": "qualifier",
@@ -174,6 +178,35 @@ def capture_screenshot(adb: Path, serial: str, destination: Path) -> None:
     run_adb(adb, "pull", remote, str(destination), serial=serial)
 
 
+def refresh_activity(adb: Path, serial: str, url: str, wait_seconds: float) -> None:
+    """Reload the activity in Weibo without screen-coordinate automation."""
+
+    if not url.startswith("https://") or any(char in url for char in "\r\n'\";|`$"):
+        raise ValueError("活动链接必须是安全的 HTTPS URL")
+    package_path = run_adb(adb, "shell", "pm", "path", WEIBO_PACKAGE, serial=serial)
+    if not package_path.startswith("package:"):
+        raise RuntimeError("MuMu 中未找到官方微博 App，无法刷新活动页面")
+    output = run_adb(
+        adb,
+        "shell",
+        "am",
+        "start",
+        "-W",
+        "-a",
+        "android.intent.action.VIEW",
+        "-d",
+        # adb shell joins its arguments into a remote shell command. Escape the
+        # query separator so ``&cid=...`` is not interpreted as a background job.
+        url.replace("&", r"\&"),
+        "-p",
+        WEIBO_PACKAGE,
+        serial=serial,
+    )
+    if "Error:" in output or "Exception" in output:
+        raise RuntimeError(f"重新打开微博活动失败: {output}")
+    time.sleep(wait_seconds)
+
+
 def _text_nodes(element: ET.Element) -> list[ET.Element]:
     return [node for node in element.iter("node") if node.attrib.get("text", "").strip()]
 
@@ -281,6 +314,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-candidates", type=int, default=15)
     parser.add_argument("--retries", type=int, default=3, help="实时 UI 树不完整时的重试次数")
     parser.add_argument(
+        "--refresh-strategy",
+        choices=("deeplink", "none"),
+        default=os.getenv("MUMU_REFRESH_STRATEGY", "deeplink"),
+        help="采集前刷新方式；默认用微博深链重新载入活动",
+    )
+    parser.add_argument(
+        "--refresh-wait-seconds",
+        type=float,
+        default=float(os.getenv("MUMU_REFRESH_WAIT_SECONDS", "8")),
+        help="重新载入活动后等待页面渲染的秒数",
+    )
+    parser.add_argument(
+        "--activity-url",
+        default=os.getenv("WEIBO_ACTIVITY_URL", DEFAULT_ACTIVITY_URL),
+        help="需要在微博 App 中重新打开的活动链接",
+    )
+    parser.add_argument(
         "--expected-candidates",
         type=int,
         help="可选：锁定完整榜单人数；不设置时仅执行最少人数和重复项校验",
@@ -292,12 +342,16 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.retries < 1:
         raise ValueError("--retries 必须至少为 1")
+    if args.refresh_wait_seconds < 0:
+        raise ValueError("--refresh-wait-seconds 不能小于 0")
     live_capture = not bool(args.xml)
     if args.xml:
         xml_path = Path(args.xml)
     else:
         adb = resolve_adb(args.adb_path)
         serial = choose_device(adb, args.serial or os.getenv("ADB_SERIAL"))
+        if args.refresh_strategy == "deeplink":
+            refresh_activity(adb, serial, args.activity_url, args.refresh_wait_seconds)
         if args.save_artifacts:
             debug_dir = Path("debug")
             debug_dir.mkdir(exist_ok=True)
@@ -335,7 +389,8 @@ def main() -> None:
         print(
             f"COLLECTION_OK stage={stage} candidates={len(records)} "
             f"approximate={approximate_count} minimum={args.min_candidates} "
-            f"expected={expected_candidates or 'unset'}"
+            f"expected={expected_candidates or 'unset'} "
+            f"refresh={args.refresh_strategy if live_capture else 'offline'}"
         )
     else:
         print(

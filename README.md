@@ -1,6 +1,6 @@
 # 2026 微博视界大会 · 剧综人物 推荐值监控（starter）
 
-这个仓库是**可运行的看板和 MuMu 只读采集原型**。已验证微博 Wbox 的 Android UI 元素树会暴露“剧综人物”的人物名和页面推荐值，因此无需 OCR 即可读取当前榜单。页面使用 `0.1w` 等缩写，数据会标记为近似值。只有在页面运营方允许自动化读取时才使用采集功能。**程序只读取当前 UI，不自动投票、不登录、不滑动、不绕过限制。**
+这个仓库是**可运行的看板和 MuMu 只读采集原型**。已验证微博 Wbox 的 Android UI 元素树会暴露“剧综人物”的人物名和页面推荐值，因此无需 OCR 即可读取当前榜单。页面使用 `0.1w` 等缩写，数据会标记为近似值。只有在页面运营方允许自动化读取时才使用采集功能。**程序只重新打开活动入口并读取当前 UI，不自动投票、不登录、不滑动、不绕过限制。**
 
 ## 本地演示（无需访问微博）
 ```bash
@@ -12,10 +12,10 @@ cp .env.example .env  # Windows: copy .env.example .env
 python demo_seed.py
 streamlit run app.py
 ```
-在侧边栏选择 `demo` 可观察明确标注的模拟数据趋势。
+看板默认展示 `final` 赛段，可在主页面自定义日期和精确起止时间。
 
 ## 使用 MuMu 模拟器采集
-1. 在 MuMu 中手动登录官方微博 App，进入「剧综人物」榜单并保持页面打开。
+1. 在 MuMu 中手动登录官方微博 App，并确认活动可以正常打开。
 2. 确认 MuMu 已开启 ADB。程序会自动查找常见安装位置；ADB 设备列表为空时会通过 `mumu-cli` 自动连接正在运行的实例。也可设置 `ADB_PATH`、`MUMU_CLI_PATH` 和 `ADB_SERIAL`。
 3. 首次先做只读测试，不写数据库：
 ```powershell
@@ -29,6 +29,8 @@ python android_collector.py
 ```powershell
 python android_collector.py --expected-candidates 15
 ```
+
+实时采集默认会先通过 Android 深链在微博 App 中重新打开活动入口，等待 8 秒后读取 UI 树，从而避免依赖活动页是否自行刷新。此动作不点击任何页面按钮。需要临时关闭时可使用 `--refresh-strategy none`；页面加载较慢时可将 `MUMU_REFRESH_WAIT_SECONDS` 调大。
 
 采集器会自动识别 `入围赛 / 突围赛 / 巅峰赛`，并将 UI 中的 `2085.1w` 存为 `20,851,000` 且设置 `score_approx=true`。UI 没有可靠的排名文本，因此数据库中的 `rank` 留空，看板只显示“观测排序”。
 
@@ -53,7 +55,7 @@ python android_collector.py --xml debug/window.xml --dry-run
 2. 采集服务器上的 `.env` 设置 `STORAGE_BACKEND=supabase`、`SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`；使用最小必要权限，不要上传到 GitHub。
 3. Streamlit Community Cloud 将本仓库部署为网站。网站端仅设置 `STORAGE_BACKEND=supabase`、`SUPABASE_URL`、`SUPABASE_ANON_KEY`，**不设置 SERVICE_ROLE_KEY**。
 4. 在获准读取的前提下，使用合适的云端定时任务执行 `python collector.py`。建议先以 5 分钟采样测试稳定性，访问频率必须服从源站规定。采集应在活动期间运行，并在活动结束后停止。
-5. 网站每 60 秒重新读取数据库。该频率只影响网页更新，不表示官方分数每 60 秒变化。
+5. 网站每 60 秒重新读取数据库。该频率只影响网页更新，不表示官方分数每 60 秒变化。图表支持用户指定日期、开始时间和结束时间。
 
 ## 推荐的数据字段
 `stage, category, candidate_id, candidate_name, score, score_approx, rank, observed_at, source`

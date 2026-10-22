@@ -4,7 +4,7 @@
 
 `MuMu 微博页面 → Windows 每 5 分钟采集 → Supabase → Streamlit Community Cloud`
 
-公开网站不连接 MuMu，也不持有数据库写入密钥。Windows 采集端必须保持登录，MuMu 必须持续运行并停留在「剧综人物」页面。
+公开网站不连接 MuMu，也不持有数据库写入密钥。Windows 采集端必须保持登录且 MuMu 必须持续运行；每次采集会在微博 App 中重新打开活动入口，因此不要求页面自行刷新。
 
 ## 1. 创建 Supabase 数据库
 
@@ -25,9 +25,13 @@ SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_SECRET_KEY=YOUR_SECRET_KEY
 SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 ADB_PATH=D:\Program Files\Netease\MuMu\nx_main\adb.exe
+MUMU_REFRESH_STRATEGY=deeplink
+MUMU_REFRESH_WAIT_SECONDS=8
 ```
 
 通常不要设置 `ADB_SERIAL`：MuMu 的 ADB 端口可能在重启后变化，采集器会通过 `mumu-cli` 自动发现并连接当前实例。
+
+`deeplink` 刷新只调用 Android Activity Manager 重新打开既有活动链接，不点击投票按钮。若微博要求重新登录或出现验证，应由用户手动处理，不应尝试绕过。可用 `--refresh-strategy none` 临时关闭刷新。
 
 `.env` 已被 `.gitignore` 排除。
 
@@ -129,7 +133,7 @@ SUPABASE_PUBLISHABLE_KEY = "YOUR_PUBLISHABLE_KEY"
 
 ## 6. 上线检查
 
-- 网站选择 `final` 后能看到当前完整榜单；
+- 网站能显示 `final` 赛段的趋势，并能自定义起止时间；
 - “最近成功采样”每约 5 分钟变化；
 - 关闭 MuMu 后，网站继续显示历史数据，但会出现数据过期警告；
 - 查看 `logs/` 和 Windows 任务的 `LastTaskResult` 排查采集失败；
