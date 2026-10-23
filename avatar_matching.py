@@ -153,6 +153,85 @@ def observations_from_files(
     return stage, len(labels), observations
 
 
+def first_candidate_bounds(xml_path: str | Path, *, min_candidates: int = 15) -> tuple[int, int, int, int]:
+    """Return the first ranked card bounds from one UI dump."""
+
+    root = ET.parse(xml_path).getroot()
+    _stage_from_root(root)
+    parent_map = {child: parent for parent in root.iter() for child in parent}
+    labels = [
+        node
+        for node in root.iter("node")
+        if node.attrib.get("text", "").strip() == "推荐值"
+    ]
+    if len(labels) < min_candidates:
+        raise ValueError(f"回顶部检查仅发现 {len(labels)} 张候选卡片")
+    value_group = parent_map.get(labels[0])
+    card = parent_map.get(value_group) if value_group is not None else None
+    if card is None:
+        raise ValueError("第 1 名推荐值节点缺少卡片父节点")
+    return parse_bounds(card.attrib.get("bounds", ""))
+
+
+def ensure_ranking_top(
+    adb,
+    serial: str,
+    artifact_dir: str | Path,
+    *,
+    capture_ui_xml: Callable,
+    run_adb: Callable,
+    min_candidates: int = 15,
+    max_swipes: int = 12,
+    swipe_wait_seconds: float = 0.8,
+    safe_min_y: int = 500,
+    safe_max_y: int = 1300,
+) -> tuple[int, tuple[int, int, int, int]]:
+    """Scroll upward until rank 1 is visibly inside the safe crop region."""
+
+    if max_swipes < 0:
+        raise ValueError("回顶部最大滑动次数不能小于 0")
+    artifact_dir = Path(artifact_dir)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    check_path = artifact_dir / "top_check.xml"
+    last_bounds = (0, 0, 0, 0)
+    last_error = None
+
+    for swipe_count in range(max_swipes + 1):
+        try:
+            capture_ui_xml(adb, serial, check_path)
+            last_bounds = first_candidate_bounds(
+                check_path, min_candidates=min_candidates
+            )
+            if safe_min_y <= last_bounds[1] <= safe_max_y:
+                return swipe_count, last_bounds
+            last_error = None
+        except (ET.ParseError, ValueError) as exc:
+            last_error = exc
+
+        if swipe_count == max_swipes:
+            break
+        # Finger moves downward, so the list moves toward its first item.
+        run_adb(
+            adb,
+            "shell",
+            "input",
+            "swipe",
+            "540",
+            "650",
+            "540",
+            "1500",
+            "600",
+            serial=serial,
+        )
+        time.sleep(swipe_wait_seconds)
+
+    detail = f"，最后错误: {last_error}" if last_error else ""
+    raise ValueError(
+        f"执行 {max_swipes} 次向上回滚后，第 1 名仍未进入安全区域；"
+        f"最后坐标={last_bounds}{detail}"
+    )
+
+
 def _masked_pixels(image: Image.Image) -> tuple[np.ndarray, np.ndarray]:
     data = np.asarray(image.resize((96, 72), Image.Resampling.LANCZOS), dtype=np.float32)
     height, width = data.shape[:2]

@@ -30,7 +30,7 @@ python android_collector.py
 python android_collector.py --expected-candidates 15
 ```
 
-实时采集默认会先通过 Android 深链在微博 App 中重新打开活动入口，等待 8 秒后读取 UI 树，从而避免依赖活动页是否自行刷新。此动作不点击任何页面按钮。需要临时关闭时可使用 `--refresh-strategy none`；页面加载较慢时可将 `MUMU_REFRESH_WAIT_SECONDS` 调大。
+实时采集默认会先通过 Android 深链在微博 App 中重新打开活动入口，等待 8 秒后读取 UI 树，从而避免依赖活动页是否自行刷新。由于 WebView 可能保留上次滚动位置，采集器随后会检查第 1 名卡片坐标；若第 1 名不在安全截图区域，则执行受控向下滑动并逐次复检，到达顶部后才开始采集。默认最多 12 次，仍无法确认顶部时整轮拒绝写入。此流程不点击投票按钮。需要临时关闭深链刷新时可使用 `--refresh-strategy none`；页面加载较慢时可将 `MUMU_REFRESH_WAIT_SECONDS` 调大。
 
 ### 人物名称隐藏后的头像模式
 

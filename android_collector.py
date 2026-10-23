@@ -326,6 +326,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="头像模式固定监控的榜单前 N 位；默认保持现有15人范围",
     )
     parser.add_argument(
+        "--top-reset-max-swipes",
+        type=int,
+        default=int(os.getenv("MUMU_TOP_RESET_MAX_SWIPES", "12")),
+        help="采集前为使第1名回到安全区域允许的最大向下滑动次数",
+    )
+    parser.add_argument(
         "--no-avatar-fallback",
         action="store_true",
         help="人物文字不可用时不启用多屏头像匹配",
@@ -404,6 +410,8 @@ def main() -> None:
         raise ValueError("--avatar-margin 必须在 0 到 1 之间")
     if args.avatar_target_candidates < args.min_candidates:
         raise ValueError("--avatar-target-candidates 不能小于 --min-candidates")
+    if args.top_reset_max_swipes < 0:
+        raise ValueError("--top-reset-max-swipes 不能小于 0")
     if args.approve_avatar_references:
         if not args.confirm_avatar_names:
             raise ValueError("批准参考库必须提供 --confirm-avatar-names")
@@ -427,6 +435,17 @@ def main() -> None:
         serial = choose_device(adb, args.serial or os.getenv("ADB_SERIAL"))
         if args.refresh_strategy == "deeplink":
             refresh_activity(adb, serial, args.activity_url, args.refresh_wait_seconds)
+        from avatar_matching import ensure_ranking_top
+
+        top_reset_swipes, top_card_bounds = ensure_ranking_top(
+            adb,
+            serial,
+            Path("debug") / "avatar_capture",
+            capture_ui_xml=capture_ui_xml,
+            run_adb=run_adb,
+            min_candidates=args.min_candidates,
+            max_swipes=args.top_reset_max_swipes,
+        )
         if args.save_artifacts:
             debug_dir = Path("debug")
             debug_dir.mkdir(exist_ok=True)
@@ -551,6 +570,7 @@ def main() -> None:
             f"approximate={approximate_count} minimum={args.min_candidates} "
             f"expected={args.expected_candidates or 'unset'} "
             f"mode={collection_mode} "
+            f"top_reset_swipes={top_reset_swipes if live_capture else 0} "
             f"refresh={args.refresh_strategy if live_capture else 'offline'}"
         )
     else:
@@ -558,7 +578,8 @@ def main() -> None:
             f"赛段={stage}，解析人物={len(records)}，"
             f"近似分数={approximate_count}，"
             f"完整性预期={args.expected_candidates or '未配置'}，"
-            f"采集模式={collection_mode}"
+            f"采集模式={collection_mode}，"
+            f"回顶部滑动={top_reset_swipes if live_capture else 0}"
         )
         print(json.dumps(preview, ensure_ascii=False, indent=2))
         if match_diagnostics:
