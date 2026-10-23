@@ -7,12 +7,12 @@ import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 
 import storage as storage_module
+from dashboard_data import prepare_records
 
 
 # Streamlit Community Cloud can hot-reload app.py without restarting imported
@@ -199,21 +199,13 @@ if end_beijing - start_beijing > timedelta(days=31):
     st.stop()
 
 
-def _prepare(records: list[dict]) -> pd.DataFrame:
-    frame = pd.DataFrame(records)
-    if frame.empty:
-        return frame
-    frame["observed_at"] = pd.to_datetime(frame["observed_at"], utc=True)
-    frame["score"] = pd.to_numeric(frame["score"])
-    frame["score_approx"] = frame["score_approx"].astype(bool)
-    return frame
-
-
 @st.fragment(run_every="60s")
 def dashboard() -> None:
     try:
-        interval_df = _prepare(read_interval(_utc_iso(start_beijing), _utc_iso(end_beijing)))
-        latest_df = _prepare(read_latest())
+        interval_df = prepare_records(
+            read_interval(_utc_iso(start_beijing), _utc_iso(end_beijing))
+        )
+        latest_df = prepare_records(read_latest())
     except Exception as exc:
         st.error(f"读取数据失败：{type(exc).__name__}: {exc}")
         return
