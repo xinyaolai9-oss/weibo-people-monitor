@@ -62,6 +62,8 @@ python android_collector.py --dry-run
 
 匹配同时要求：头像相似度至少 `0.88`、相对第二候选至少领先 `0.05`、所有头像一对一唯一匹配，并且卡片分类/作品信息与参考库一致。可通过 `AVATAR_MATCH_THRESHOLD`、`AVATAR_MATCH_MARGIN` 和 `AVATAR_TARGET_CANDIDATES` 调整，但不建议降低默认安全阈值。
 
+如果名称隐藏期间的 `window_live.xml` 旧版本能从 OneDrive 下载，可以用 `scripts/recover_hidden_name_xml.py` 恢复完整历史快照。默认只校验、不写库；文件名须为 `window_live_H_MM.xml`，并明确提供日期和小时偏移。恢复工具会校验文件哈希、15 人完整性、卡片签名、姓名唯一性及数据库全时间序列，只有加上 `--write` 才会回填。恢复时间来自文件名所表示的采样时点，来源标记为 `recovered_onedrive_xml`。
+
 采集器会自动识别 `入围赛 / 突围赛 / 巅峰赛`，并将 UI 中的 `2085.1w` 存为 `20,851,000` 且设置 `score_approx=true`。UI 没有可靠的排名文本，因此数据库中的 `rank` 留空，看板只显示“观测排序”。
 
 可以先离线检查已经导出的 UI 文件：
