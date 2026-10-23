@@ -1,6 +1,6 @@
 # 2026 微博视界大会 · 剧综人物 推荐值监控（starter）
 
-这个仓库是**可运行的看板和 MuMu 只读采集原型**。已验证微博 Wbox 的 Android UI 元素树会暴露“剧综人物”的人物名和页面推荐值，因此无需 OCR 即可读取当前榜单。页面使用 `0.1w` 等缩写，数据会标记为近似值。只有在页面运营方允许自动化读取时才使用采集功能。**程序只重新打开活动入口并读取当前 UI，不自动投票、不登录、不滑动、不绕过限制。**
+这个仓库是**可运行的看板和 MuMu 只读采集原型**。页面仍提供人物名时优先读取 Android UI 元素树；人物名隐藏后，可使用经过人工确认的本地头像参考库。页面使用 `0.1w` 等缩写，数据会标记为近似值。只有在页面运营方允许自动化读取时才使用采集功能。**程序只重新打开活动入口、读取 UI/截图，并在头像模式下纵向滚动榜单；不自动投票、不登录、不绕过限制。**
 
 ## 本地演示（无需访问微博）
 ```bash
@@ -31,6 +31,36 @@ python android_collector.py --expected-candidates 15
 ```
 
 实时采集默认会先通过 Android 深链在微博 App 中重新打开活动入口，等待 8 秒后读取 UI 树，从而避免依赖活动页是否自行刷新。此动作不点击任何页面按钮。需要临时关闭时可使用 `--refresh-strategy none`；页面加载较慢时可将 `MUMU_REFRESH_WAIT_SECONDS` 调大。
+
+### 人物名称隐藏后的头像模式
+
+头像参考图只保存在采集电脑的 `avatar_references/`，已被 Git 忽略，不会上传到网站或 GitHub。默认固定监控前 15 位；如果有新人物进入前 15、头像变化、赛段变化、元数据不一致、数量不完整或匹配不唯一，整轮数据都会拒绝写入。
+
+首次生成待确认参考库：
+
+```powershell
+python android_collector.py --build-avatar-references
+```
+
+人工检查 `avatar_references/contact_sheet.png` 中的头像、排名和建议姓名，再用第二轮独立截图验证稳定性：
+
+```powershell
+python android_collector.py --validate-avatar-references
+```
+
+确认 15 个姓名全部正确后，必须按联系表顺序逐一重复姓名才能批准；示例：
+
+```powershell
+python android_collector.py --approve-avatar-references --confirm-avatar-names "姓名1,姓名2,姓名3,...,姓名15"
+```
+
+批准后先做不写库测试：
+
+```powershell
+python android_collector.py --dry-run
+```
+
+匹配同时要求：头像相似度至少 `0.88`、相对第二候选至少领先 `0.05`、所有头像一对一唯一匹配，并且卡片分类/作品信息与参考库一致。可通过 `AVATAR_MATCH_THRESHOLD`、`AVATAR_MATCH_MARGIN` 和 `AVATAR_TARGET_CANDIDATES` 调整，但不建议降低默认安全阈值。
 
 采集器会自动识别 `入围赛 / 突围赛 / 巅峰赛`，并将 UI 中的 `2085.1w` 存为 `20,851,000` 且设置 `score_approx=true`。UI 没有可靠的排名文本，因此数据库中的 `rank` 留空，看板只显示“观测排序”。
 

@@ -33,6 +33,21 @@ MUMU_REFRESH_WAIT_SECONDS=8
 
 `deeplink` 刷新只调用 Android Activity Manager 重新打开既有活动链接，不点击投票按钮。若微博要求重新登录或出现验证，应由用户手动处理，不应尝试绕过。可用 `--refresh-strategy none` 临时关闭刷新。
 
+如果人物名称从 UI 树中消失，采集器会回退到本地头像匹配。先执行：
+
+```powershell
+python android_collector.py --build-avatar-references
+python android_collector.py --validate-avatar-references
+```
+
+核对 `avatar_references/contact_sheet.png` 后，再按其中顺序完整重复 15 个姓名进行批准：
+
+```powershell
+python android_collector.py --approve-avatar-references --confirm-avatar-names "姓名1,姓名2,...,姓名15"
+```
+
+`avatar_references/` 不上传 GitHub，只供 Windows 采集端使用。未批准、匹配不完整、相似度不足、候选不唯一、卡片元数据变化或赛段变化时，采集器都会拒绝写入 Supabase。批准后必须再次执行 `python android_collector.py --dry-run`，确认输出 `mode=avatar` 后才重新启用定时任务。
+
 `.env` 已被 `.gitignore` 排除。
 
 ## 2. 验证云端读写

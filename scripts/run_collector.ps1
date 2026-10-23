@@ -36,8 +36,14 @@ try {
     if ($DryRun) {
         $arguments += '--dry-run'
     }
+    # Native stderr becomes a terminating PowerShell error when the global
+    # preference is Stop. Temporarily continue so the complete Python
+    # traceback is captured in the daily log before we handle the exit code.
+    $previousErrorPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $collectorOutput = & $pythonPath @arguments 2>&1
     $collectorExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorPreference
     $collectorOutput | Out-File -LiteralPath $logPath -Append -Encoding utf8
     if ($collectorExitCode -ne 0) {
         throw "Collector exited with code $collectorExitCode"
